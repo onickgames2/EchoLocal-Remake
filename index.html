@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <title>EchoStream Local | Sketchware Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
+        
+        :root {
+            --app-accent: #22c55e;
+            --bg-color: #0b0b0b;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --text-main: #ffffff;
+            --text-dim: #a1a1aa;
+            --border-alpha: rgba(255, 255, 255, 0.1);
+        }
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+            margin: 0; padding: 0; overflow: hidden; height: 100vh;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .glass { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--border-alpha); }
+        
+        #now-playing-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 100;
+            background: #000; transform: translateY(100%);
+            transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            display: flex; flex-direction: column;
+        }
+        #now-playing-screen.active { transform: translateY(0); }
+
+        .seek-bar { -webkit-appearance: none; width: 100%; background: transparent; height: 30px; }
+        .seek-bar::-webkit-slider-runnable-track { background: var(--border-alpha); height: 4px; border-radius: 2px; }
+        .seek-bar::-webkit-slider-thumb { 
+            -webkit-appearance: none; height: 18px; width: 18px; background: var(--app-accent); 
+            border-radius: 50%; margin-top: -7px; border: 3px solid #000;
+        }
+
+        .cover-placeholder {
+            width: 70vw; max-width: 300px; aspect-ratio: 1/1; border-radius: 30px;
+            background: linear-gradient(135deg, #22c55e, #166534);
+            display: flex; items-center; justify-content: center;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+        }
+
+        #visualizer { position: absolute; bottom: 0; width: 100%; height: 160px; opacity: 0.6; pointer-events: none; }
+        
+        .song-item {
+            display: flex; items-center; gap: 4px; padding: 12px; border-radius: 16px;
+            background: rgba(255,255,255,0.03); margin-bottom: 8px; transition: 0.2s;
+        }
+        .song-item:active { background: rgba(34, 197, 94, 0.2); transform: scale(0.98); }
+
+        /* Esconder input de arquivo */
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="fixed inset-0 z-[300] bg-black flex flex-col items-center justify-center p-8">
+        <div class="relative mb-8">
+            <i class="fa-solid fa-folder-open text-7xl text-green-500"></i>
+            <div class="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                <i class="fa-solid fa-plus text-black text-xs"></i>
+            </div>
+        </div>
+        <h1 class="text-3xl font-black italic tracking-tighter mb-4 text-white">LOCAL PLAYER</h1>
+        <p class="text-zinc-500 text-center text-sm mb-10 px-6">Toque as músicas armazenadas no seu dispositivo Android.</p>
+        
+        <label for="file-input" class="w-full max-w-xs py-4 bg-green-500 text-black text-center font-black rounded-full active:scale-95 transition-transform cursor-pointer">
+            IMPORTAR MÚSICAS
+        </label>
+        <input type="file" id="file-input" multiple accept="audio/*">
+    </div>
+
+    <!-- Main App -->
+    <div id="main-app" class="hidden opacity-0 h-screen flex flex-col transition-opacity duration-500">
+        <header class="p-6 flex justify-between items-center">
+            <h2 class="text-2xl font-black italic">ECHO<span class="text-green-500">LOCAL</span></h2>
+            <label for="file-input" class="w-10 h-10 rounded-full glass flex items-center justify-center">
+                <i class="fa-solid fa-plus text-xs"></i>
+            </label>
+        </header>
+
+        <main id="song-list" class="flex-1 overflow-y-auto px-6 pb-32">
+            <!-- Músicas aparecerão aqui -->
+        </main>
+
+        <!-- Mini Player -->
+        <div id="mini-player" class="fixed bottom-0 left-0 right-0 h-24 glass px-6 flex items-center justify-between z-[90] border-t border-white/5" onclick="openFullPlayer()">
+            <div class="flex items-center gap-4 flex-1 overflow-hidden">
+                <div class="w-12 h-12 bg-green-900 rounded-lg flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-music text-green-400"></i>
+                </div>
+                <div class="truncate">
+                    <p id="mini-name" class="font-bold text-sm truncate">Nenhuma música</p>
+                    <p id="mini-artist" class="text-[10px] text-zinc-500 font-black uppercase">Arquivo Local</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button onclick="event.stopPropagation(); togglePlayback();" id="mini-play-btn" class="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-play"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Player -->
+    <div id="now-playing-screen">
+        <canvas id="visualizer"></canvas>
+        <div class="flex flex-col h-full p-8 relative z-10">
+            <header class="flex justify-between items-center mb-10">
+                <button onclick="closeFullPlayer()" class="text-xl"><i class="fa-solid fa-chevron-down"></i></button>
+                <span class="text-[10px] font-black tracking-widest text-zinc-500">TOCANDO AGORA</span>
+                <div class="w-6"></div>
+            </header>
+
+            <div class="flex-1 flex flex-col items-center justify-center">
+                <div class="cover-placeholder mb-12">
+                    <i class="fa-solid fa-compact-disc text-8xl text-black/20 animate-[spin_8s_linear_infinite]"></i>
+                </div>
+                <div class="text-center w-full px-4">
+                    <h2 id="full-title" class="text-2xl font-black leading-tight mb-2 truncate">Título do Arquivo</h2>
+                    <p class="text-green-500 font-bold text-xs tracking-widest uppercase">Áudio Local</p>
+                </div>
+            </div>
+
+            <div class="w-full mt-auto pb-8">
+                <input type="range" id="progress-bar" class="seek-bar" value="0" oninput="seek(this.value)">
+                <div class="flex justify-between text-[10px] font-black text-zinc-500 mt-2">
+                    <span id="curr-time">0:00</span>
+                    <span id="total-time">0:00</span>
+                </div>
+
+                <div class="flex items-center justify-center gap-8 mt-10">
+                    <button onclick="prev()" class="text-2xl text-zinc-600 active:text-white transition-colors"><i class="fa-solid fa-backward-step"></i></button>
+                    <button onclick="togglePlayback()" id="full-play-btn" class="w-24 h-24 bg-green-500 text-black rounded-full flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button onclick="next()" class="text-2xl text-zinc-600 active:text-white transition-colors"><i class="fa-solid fa-forward-step"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <audio id="audio-player"></audio>
+
+<script>
+let library = [];
+let currentIdx = -1;
+let started = false;
+
+const player = document.getElementById('audio-player');
+const fileInput = document.getElementById('file-input');
+const songList = document.getElementById('song-list');
+
+// AUDIO CONTEXT (VISUALIZER)
+let audioCtx, analyser, source, dataArray;
+
+function initAudio(){
+    if(started) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioCtx.createAnalyser();
+        source = audioCtx.createMediaElementSource(player);
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+        analyser.fftSize = 64;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        started = true;
+        drawVisualizer();
+    } catch(e) { console.error(e); }
+}
+
+// IMPORTAR ARQUIVOS
+fileInput.addEventListener('change', function(e) {
+    const files = Array.from(e.target.files);
+    if(files.length === 0) return;
+
+    // Criar lista de objetos de música
+    files.forEach(file => {
+        library.push({
+            title: file.name.replace(/\.[^/.]+$/, ""), // remove extensão
+            url: URL.createObjectURL(file),
+            file: file
+        });
+    });
+
+    renderSongs();
+    
+    // Esconder splash e mostrar app
+    document.getElementById('splash-screen').style.display = 'none';
+    const main = document.getElementById('main-app');
+    main.classList.remove('hidden');
+    setTimeout(() => main.classList.remove('opacity-0'), 10);
+});
+
+function renderSongs(){
+    songList.innerHTML = "";
+    library.forEach((song, i) => {
+        const div = document.createElement('div');
+        div.className = "song-item";
+        div.onclick = () => playSong(i);
+        div.innerHTML = `
+            <div class="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-play text-[10px] ${currentIdx === i ? 'text-green-500' : 'text-zinc-600'}"></i>
+            </div>
+            <div class="flex-1 overflow-hidden">
+                <p class="font-bold text-xs truncate ${currentIdx === i ? 'text-green-500' : 'text-white'}">${song.title}</p>
+                <p class="text-[9px] text-zinc-600 font-black uppercase">Local File</p>
+            </div>
+        `;
+        songList.appendChild(div);
+    });
+}
+
+function playSong(i){
+    currentIdx = i;
+    const song = library[i];
+    
+    player.src = song.url;
+    initAudio();
+    player.play();
+    
+    updateUI(song);
+    updateButtons();
+    renderSongs(); // atualiza cores na lista
+}
+
+function togglePlayback(){
+    if(currentIdx === -1 && library.length > 0) {
+        playSong(0);
+        return;
+    }
+    if(player.paused) player.play(); else player.pause();
+    updateButtons();
+}
+
+function updateButtons(){
+    const icon = player.paused ? '<i class="fa-solid fa-play"></i>' : '<i class="fa-solid fa-pause"></i>';
+    document.getElementById('mini-play-btn').innerHTML = icon;
+    document.getElementById('full-play-btn').innerHTML = icon;
+}
+
+function updateUI(song){
+    document.getElementById('mini-name').innerText = song.title;
+    document.getElementById('full-title').innerText = song.title;
+}
+
+function next(){
+    if(library.length > 0) playSong((currentIdx + 1) % library.length);
+}
+function prev(){
+    if(library.length > 0) playSong((currentIdx - 1 + library.length) % library.length);
+}
+
+function seek(val){
+    if(player.duration) player.currentTime = (val/100) * player.duration;
+}
+
+player.ontimeupdate = () => {
+    if(!player.duration) return;
+    const prog = (player.currentTime / player.duration) * 100;
+    document.getElementById('progress-bar').value = prog;
+    document.getElementById('curr-time').innerText = formatTime(player.currentTime);
+    document.getElementById('total-time').innerText = formatTime(player.duration);
+};
+
+function formatTime(s){
+    if(isNaN(s)) return "0:00";
+    let m = Math.floor(s/60);
+    let r = Math.floor(s%60);
+    return m + ":" + (r<10?"0":"") + r;
+}
+
+function drawVisualizer(){
+    const canvas = document.getElementById("visualizer");
+    const ctx = canvas.getContext("2d");
+    function draw(){
+        requestAnimationFrame(draw);
+        if(!analyser) return;
+        analyser.getByteFrequencyData(dataArray);
+        canvas.width = window.innerWidth;
+        canvas.height = 160;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        let barWidth = canvas.width / dataArray.length;
+        for(let i=0; i<dataArray.length; i++){
+            let h = (dataArray[i] / 255) * canvas.height;
+            let gradient = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
+            gradient.addColorStop(0, "#22c55e");
+            gradient.addColorStop(1, "#166534");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(i * barWidth, canvas.height - h, barWidth - 3, h);
+        }
+    }
+    draw();
+}
+
+function openFullPlayer(){
+    if(currentIdx !== -1) document.getElementById('now-playing-screen').classList.add('active');
+}
+function closeFullPlayer(){
+    document.getElementById('now-playing-screen').classList.remove('active');
+}
+
+player.onended = () => next();
+</script>
+</body>
+</html>
+
