@@ -1,13 +1,15 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-pt">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
-    <title>EchoStream Local | Sketchware Pro</title>
+    <title>EchoLocal | Player de Áudio</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Biblioteca para extração de capas e tags ID3 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap');
@@ -46,106 +48,115 @@
             border-radius: 50%; margin-top: -7px; border: 3px solid #000;
         }
 
-        .cover-placeholder {
-            width: 70vw; max-width: 300px; aspect-ratio: 1/1; border-radius: 30px;
-            background: linear-gradient(135deg, #22c55e, #166534);
-            display: flex; items-center; justify-content: center;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+        .cover-container {
+            width: 75vw; max-width: 320px; aspect-ratio: 1/1; border-radius: 24px;
+            overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+            background: linear-gradient(135deg, #111, #1a1a1a);
+            position: relative;
         }
+        
+        .cover-image { width: 100%; height: 100%; object-fit: cover; }
 
-        #visualizer { position: absolute; bottom: 0; width: 100%; height: 160px; opacity: 0.6; pointer-events: none; }
+        #visualizer { position: absolute; bottom: 0; width: 100%; height: 150px; opacity: 0.5; pointer-events: none; }
         
         .song-item {
-            display: flex; items-center; gap: 4px; padding: 12px; border-radius: 16px;
+            display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px;
             background: rgba(255,255,255,0.03); margin-bottom: 8px; transition: 0.2s;
         }
-        .song-item:active { background: rgba(34, 197, 94, 0.2); transform: scale(0.98); }
+        .song-item:active { background: rgba(34, 197, 94, 0.15); transform: scale(0.97); }
 
-        /* Esconder input de arquivo */
         #file-input { display: none; }
+        
+        /* Efeito de rotação para o ícone quando não há capa */
+        .rotating { animation: spin 12s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-    <!-- Splash Screen -->
+    <!-- Tela de Início (Splash) -->
     <div id="splash-screen" class="fixed inset-0 z-[300] bg-black flex flex-col items-center justify-center p-8">
         <div class="relative mb-8">
-            <i class="fa-solid fa-folder-open text-7xl text-green-500"></i>
+            <i class="fa-solid fa-circle-nodes text-7xl text-green-500"></i>
             <div class="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center">
                 <i class="fa-solid fa-plus text-black text-xs"></i>
             </div>
         </div>
-        <h1 class="text-3xl font-black italic tracking-tighter mb-4 text-white">LOCAL PLAYER</h1>
-        <p class="text-zinc-500 text-center text-sm mb-10 px-6">Toque as músicas armazenadas no seu dispositivo Android.</p>
+        <h1 class="text-4xl font-black italic tracking-tighter mb-4 text-white">ECHO<span class="text-green-500">LOCAL</span></h1>
+        <p class="text-zinc-500 text-center text-sm mb-10 px-6 font-medium">Importe as suas músicas locais com capas automáticas.</p>
         
-        <label for="file-input" class="w-full max-w-xs py-4 bg-green-500 text-black text-center font-black rounded-full active:scale-95 transition-transform cursor-pointer">
-            IMPORTAR MÚSICAS
+        <label for="file-input" class="w-full max-w-xs py-4 bg-green-500 text-black text-center font-black rounded-full active:scale-95 transition-transform cursor-pointer shadow-lg shadow-green-500/20">
+            ESCOLHER MÚSICAS
         </label>
         <input type="file" id="file-input" multiple accept="audio/*">
     </div>
 
-    <!-- Main App -->
+    <!-- Interface Principal -->
     <div id="main-app" class="hidden opacity-0 h-screen flex flex-col transition-opacity duration-500">
-        <header class="p-6 flex justify-between items-center">
-            <h2 class="text-2xl font-black italic">ECHO<span class="text-green-500">LOCAL</span></h2>
-            <label for="file-input" class="w-10 h-10 rounded-full glass flex items-center justify-center">
+        <header class="p-6 flex justify-between items-center border-b border-white/5">
+            <h2 class="text-2xl font-black italic tracking-tighter">ECHO<span class="text-green-500">LOCAL</span></h2>
+            <label for="file-input" class="w-10 h-10 rounded-full glass flex items-center justify-center cursor-pointer active:scale-90 transition-transform">
                 <i class="fa-solid fa-plus text-xs"></i>
             </label>
         </header>
 
-        <main id="song-list" class="flex-1 overflow-y-auto px-6 pb-32">
-            <!-- Músicas aparecerão aqui -->
+        <main id="song-list" class="flex-1 overflow-y-auto px-6 pt-4 pb-32">
+            <!-- A lista de músicas será injetada aqui -->
         </main>
 
-        <!-- Mini Player -->
+        <!-- Mini Player Inferior -->
         <div id="mini-player" class="fixed bottom-0 left-0 right-0 h-24 glass px-6 flex items-center justify-between z-[90] border-t border-white/5" onclick="openFullPlayer()">
             <div class="flex items-center gap-4 flex-1 overflow-hidden">
-                <div class="w-12 h-12 bg-green-900 rounded-lg flex items-center justify-center shrink-0">
-                    <i class="fa-solid fa-music text-green-400"></i>
+                <div id="mini-cover-box" class="w-12 h-12 bg-zinc-900 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-white/5">
+                    <i id="mini-placeholder" class="fa-solid fa-music text-green-600 text-sm"></i>
+                    <img id="mini-img" class="hidden w-full h-full object-cover">
                 </div>
                 <div class="truncate">
-                    <p id="mini-name" class="font-bold text-sm truncate">Nenhuma música</p>
-                    <p id="mini-artist" class="text-[10px] text-zinc-500 font-black uppercase">Arquivo Local</p>
+                    <p id="mini-title" class="font-bold text-sm truncate">Nenhuma música</p>
+                    <p id="mini-desc" class="text-[10px] text-zinc-500 font-bold uppercase tracking-tight">Aguardando seleção</p>
                 </div>
             </div>
             <div class="flex items-center gap-4">
-                <button onclick="event.stopPropagation(); togglePlayback();" id="mini-play-btn" class="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center text-lg">
+                <button onclick="event.stopPropagation(); togglePlayback();" id="mini-play-btn" class="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center text-lg active:scale-90 transition-transform">
                     <i class="fa-solid fa-play"></i>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Full Player -->
+    <!-- Player em Tela Cheia -->
     <div id="now-playing-screen">
         <canvas id="visualizer"></canvas>
         <div class="flex flex-col h-full p-8 relative z-10">
-            <header class="flex justify-between items-center mb-10">
-                <button onclick="closeFullPlayer()" class="text-xl"><i class="fa-solid fa-chevron-down"></i></button>
-                <span class="text-[10px] font-black tracking-widest text-zinc-500">TOCANDO AGORA</span>
-                <div class="w-6"></div>
+            <header class="flex justify-between items-center mb-8">
+                <button onclick="closeFullPlayer()" class="text-xl p-2 active:scale-75 transition-transform"><i class="fa-solid fa-chevron-down"></i></button>
+                <span class="text-[10px] font-black tracking-[0.2em] text-zinc-500">A REPRODUZIR</span>
+                <div class="w-10"></div>
             </header>
 
             <div class="flex-1 flex flex-col items-center justify-center">
-                <div class="cover-placeholder mb-12">
-                    <i class="fa-solid fa-compact-disc text-8xl text-black/20 animate-[spin_8s_linear_infinite]"></i>
+                <div class="cover-container mb-10" id="full-cover-wrapper">
+                    <i id="full-placeholder" class="fa-solid fa-compact-disc text-8xl text-zinc-800 rotating"></i>
+                    <img id="full-img" class="hidden cover-image">
                 </div>
-                <div class="text-center w-full px-4">
-                    <h2 id="full-title" class="text-2xl font-black leading-tight mb-2 truncate">Título do Arquivo</h2>
-                    <p class="text-green-500 font-bold text-xs tracking-widest uppercase">Áudio Local</p>
+                <div class="text-center w-full px-6">
+                    <h2 id="full-title" class="text-2xl font-black leading-tight mb-2 truncate">Título da Faixa</h2>
+                    <p id="full-artist" class="text-green-500 font-bold text-xs tracking-widest uppercase truncate px-4">Artista Desconhecido</p>
                 </div>
             </div>
 
-            <div class="w-full mt-auto pb-8">
+            <div class="w-full mt-auto pb-10">
                 <input type="range" id="progress-bar" class="seek-bar" value="0" oninput="seek(this.value)">
                 <div class="flex justify-between text-[10px] font-black text-zinc-500 mt-2">
                     <span id="curr-time">0:00</span>
                     <span id="total-time">0:00</span>
                 </div>
 
-                <div class="flex items-center justify-center gap-8 mt-10">
+                <div class="flex items-center justify-center gap-10 mt-10">
                     <button onclick="prev()" class="text-2xl text-zinc-600 active:text-white transition-colors"><i class="fa-solid fa-backward-step"></i></button>
-                    <button onclick="togglePlayback()" id="full-play-btn" class="w-24 h-24 bg-green-500 text-black rounded-full flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+                    <button onclick="togglePlayback()" id="full-play-btn" class="w-24 h-24 bg-green-500 text-black rounded-full flex items-center justify-center text-3xl shadow-[0_15px_40px_rgba(34,197,94,0.3)] active:scale-95 transition-transform">
                         <i class="fa-solid fa-play"></i>
                     </button>
                     <button onclick="next()" class="text-2xl text-zinc-600 active:text-white transition-colors"><i class="fa-solid fa-forward-step"></i></button>
@@ -164,8 +175,9 @@ let started = false;
 const player = document.getElementById('audio-player');
 const fileInput = document.getElementById('file-input');
 const songList = document.getElementById('song-list');
+const jsmediatags = window.jsmediatags;
 
-// AUDIO CONTEXT (VISUALIZER)
+// AUDIO CONTEXT
 let audioCtx, analyser, source, dataArray;
 
 function initAudio(){
@@ -183,23 +195,55 @@ function initAudio(){
     } catch(e) { console.error(e); }
 }
 
-// IMPORTAR ARQUIVOS
-fileInput.addEventListener('change', function(e) {
+// EXTRAÇÃO DE METADADOS
+function getTags(file) {
+    return new Promise((resolve) => {
+        jsmediatags.read(file, {
+            onSuccess: function(tag) {
+                const { tags } = tag;
+                let coverUrl = null;
+                
+                if (tags.picture) {
+                    const { data, format } = tags.picture;
+                    let base64String = "";
+                    for (let i = 0; i < data.length; i++) {
+                        base64String += String.fromCharCode(data[i]);
+                    }
+                    coverUrl = `data:${format};base64,${window.btoa(base64String)}`;
+                }
+                
+                resolve({
+                    title: tags.title || file.name.replace(/\.[^/.]+$/, ""),
+                    artist: tags.artist || "Artista Desconhecido",
+                    cover: coverUrl
+                });
+            },
+            onError: function(error) {
+                resolve({
+                    title: file.name.replace(/\.[^/.]+$/, ""),
+                    artist: "Ficheiro Local",
+                    cover: null
+                });
+            }
+        });
+    });
+}
+
+// IMPORTAÇÃO
+fileInput.addEventListener('change', async function(e) {
     const files = Array.from(e.target.files);
     if(files.length === 0) return;
 
-    // Criar lista de objetos de música
-    files.forEach(file => {
+    for (const file of files) {
+        const metadata = await getTags(file);
         library.push({
-            title: file.name.replace(/\.[^/.]+$/, ""), // remove extensão
-            url: URL.createObjectURL(file),
-            file: file
+            ...metadata,
+            url: URL.createObjectURL(file)
         });
-    });
+    }
 
     renderSongs();
     
-    // Esconder splash e mostrar app
     document.getElementById('splash-screen').style.display = 'none';
     const main = document.getElementById('main-app');
     main.classList.remove('hidden');
@@ -212,14 +256,20 @@ function renderSongs(){
         const div = document.createElement('div');
         div.className = "song-item";
         div.onclick = () => playSong(i);
+        
+        const coverHtml = song.cover 
+            ? `<img src="${song.cover}" class="w-10 h-10 rounded-lg object-cover">`
+            : `<div class="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center shrink-0 border border-white/5">
+                <i class="fa-solid fa-music text-[10px] ${currentIdx === i ? 'text-green-500' : 'text-zinc-600'}"></i>
+               </div>`;
+
         div.innerHTML = `
-            <div class="w-10 h-10 bg-white/5 rounded-lg flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-play text-[10px] ${currentIdx === i ? 'text-green-500' : 'text-zinc-600'}"></i>
-            </div>
+            ${coverHtml}
             <div class="flex-1 overflow-hidden">
                 <p class="font-bold text-xs truncate ${currentIdx === i ? 'text-green-500' : 'text-white'}">${song.title}</p>
-                <p class="text-[9px] text-zinc-600 font-black uppercase">Local File</p>
+                <p class="text-[9px] text-zinc-600 font-black uppercase truncate">${song.artist}</p>
             </div>
+            ${currentIdx === i ? '<div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>' : ''}
         `;
         songList.appendChild(div);
     });
@@ -235,7 +285,7 @@ function playSong(i){
     
     updateUI(song);
     updateButtons();
-    renderSongs(); // atualiza cores na lista
+    renderSongs();
 }
 
 function togglePlayback(){
@@ -254,8 +304,35 @@ function updateButtons(){
 }
 
 function updateUI(song){
-    document.getElementById('mini-name').innerText = song.title;
+    // Atualiza Mini Player
+    document.getElementById('mini-title').innerText = song.title;
+    document.getElementById('mini-desc').innerText = song.artist;
+    
+    const mImg = document.getElementById('mini-img');
+    const mIcon = document.getElementById('mini-placeholder');
+    if(song.cover){
+        mImg.src = song.cover;
+        mImg.classList.remove('hidden');
+        mIcon.classList.add('hidden');
+    } else {
+        mImg.classList.add('hidden');
+        mIcon.classList.remove('hidden');
+    }
+
+    // Atualiza Player Cheio
     document.getElementById('full-title').innerText = song.title;
+    document.getElementById('full-artist').innerText = song.artist;
+    
+    const fImg = document.getElementById('full-img');
+    const fIcon = document.getElementById('full-placeholder');
+    if(song.cover){
+        fImg.src = song.cover;
+        fImg.classList.remove('hidden');
+        fIcon.classList.add('hidden');
+    } else {
+        fImg.classList.add('hidden');
+        fIcon.classList.remove('hidden');
+    }
 }
 
 function next(){
@@ -292,16 +369,14 @@ function drawVisualizer(){
         if(!analyser) return;
         analyser.getByteFrequencyData(dataArray);
         canvas.width = window.innerWidth;
-        canvas.height = 160;
+        canvas.height = 150;
         ctx.clearRect(0,0,canvas.width,canvas.height);
+        
         let barWidth = canvas.width / dataArray.length;
         for(let i=0; i<dataArray.length; i++){
             let h = (dataArray[i] / 255) * canvas.height;
-            let gradient = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
-            gradient.addColorStop(0, "#22c55e");
-            gradient.addColorStop(1, "#166534");
-            ctx.fillStyle = gradient;
-            ctx.fillRect(i * barWidth, canvas.height - h, barWidth - 3, h);
+            ctx.fillStyle = `rgba(34, 197, 94, ${0.1 + (dataArray[i]/255) * 0.8})`;
+            ctx.fillRect(i * barWidth, canvas.height - h, barWidth - 2, h);
         }
     }
     draw();
